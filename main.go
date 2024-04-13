@@ -56,8 +56,17 @@ func printResults(results Results) {
 	fmt.Printf("%s=%.1f/%.1f/%.1f}", k, r.Min, avg, r.Max)
 }
 
-func producer(c chan<- string) {
+func producer(c chan<- []string) {
 	defer close(c)
+
+	buflenstr := os.Getenv("BUFFLEN")
+	if buflenstr == "" {
+		buflenstr = "8192"
+	}
+	buflen, err := strconv.Atoi(buflenstr)
+	if err != nil {
+		panic(err)
+	}
 
 	filePath := "data/measurements.txt"
 
@@ -68,29 +77,55 @@ func producer(c chan<- string) {
 	defer f.Close()
 
 	scanner := bufio.NewScanner(f)
+	lines := make([]string, 0, buflen)
 	for scanner.Scan() {
-		c <- scanner.Text()
+		lines = append(lines, scanner.Text())
+		if len(lines) == cap(lines) {
+			c <- lines
+			lines = make([]string, 0, buflen)
+		}
+	}
+	if len(lines) > 0 {
+		c <- lines
 	}
 }
 
-func consumer(c <-chan string) Results {
-	results := make(Results)
-	for line := range c {
-		station, tempStr, _ := strings.Cut(line, ";")
-		temp := parseFloat(tempStr)
+func lenMonitor(c <-chan []string) {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
 
-		if r, ok := results[station]; !ok {
-			results[station] = Result{
-				Min:   temp,
-				Max:   temp,
-				Sum:   temp,
-				Count: 1,
+	for {
+		select {
+		case <-ticker.C:
+			fmt.Fprintf(os.Stderr, "len(c)=%d\n", len(c))
+		case _, ok := <-c:
+			if !ok {
+				return
 			}
-		} else {
-			r.Min = math.Min(r.Min, temp)
-			r.Max = math.Max(r.Max, temp)
-			r.Sum += temp
-			r.Count++
+		}
+	}
+}
+
+func consumer(c <-chan []string) Results {
+	results := make(Results)
+	for lines := range c {
+		for _, line := range lines {
+			station, tempStr, _ := strings.Cut(line, ";")
+			temp := parseFloat(tempStr)
+
+			if r, ok := results[station]; !ok {
+				results[station] = Result{
+					Min:   temp,
+					Max:   temp,
+					Sum:   temp,
+					Count: 1,
+				}
+			} else {
+				r.Min = math.Min(r.Min, temp)
+				r.Max = math.Max(r.Max, temp)
+				r.Sum += temp
+				r.Count++
+			}
 		}
 	}
 	return results
@@ -116,7 +151,8 @@ func main() {
 	}
 	defer f.Close()
 
-	c := make(chan string, 128)
+	c := make(chan []string, 128)
+	go lenMonitor(c)
 	go producer(c)
 	results := consumer(c)
 
