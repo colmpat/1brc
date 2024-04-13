@@ -2,6 +2,14 @@
 
 ## Devlog
 
+
+#### v1.0
+Made a producer and consumer model with a channel. Not as good as I was hoping for, but it's a start.
+Looking at prof, we spend more time doing scheduling/locking than we do actually processing the data.
+That means we should increase workers? I'm not sure. I'll try that next.
+
+**Runtime**: 5m6.327792616s
+
 #### v0
 
 Setup the project and got something basic working. Added profiling and a timer mechanism to measure our

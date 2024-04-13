@@ -56,6 +56,46 @@ func printResults(results Results) {
 	fmt.Printf("%s=%.1f/%.1f/%.1f}", k, r.Min, avg, r.Max)
 }
 
+func producer(c chan<- string) {
+	defer close(c)
+
+	filePath := "data/measurements.txt"
+
+	f, err := os.Open(filePath)
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		c <- scanner.Text()
+	}
+}
+
+func consumer(c <-chan string) Results {
+	results := make(Results)
+	for line := range c {
+		station, tempStr, _ := strings.Cut(line, ";")
+		temp := parseFloat(tempStr)
+
+		if r, ok := results[station]; !ok {
+			results[station] = Result{
+				Min:   temp,
+				Max:   temp,
+				Sum:   temp,
+				Count: 1,
+			}
+		} else {
+			r.Min = math.Min(r.Min, temp)
+			r.Max = math.Max(r.Max, temp)
+			r.Sum += temp
+			r.Count++
+		}
+	}
+	return results
+}
+
 func main() {
 	pf, err := os.Create("cpu.prof")
 	if err != nil {
@@ -76,28 +116,9 @@ func main() {
 	}
 	defer f.Close()
 
-	results := make(Results)
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := scanner.Text()
-		station, tempStr, _ := strings.Cut(line, ";")
-		temp := parseFloat(tempStr)
-
-		if r, ok := results[station]; !ok {
-			results[station] = Result{
-				Min:   temp,
-				Max:   temp,
-				Sum:   temp,
-				Count: 1,
-			}
-		} else {
-			r.Min = math.Min(r.Min, temp)
-			r.Max = math.Max(r.Max, temp)
-			r.Sum += temp
-			r.Count++
-		}
-	}
+	c := make(chan string, 128)
+	go producer(c)
+	results := consumer(c)
 
 	printResults(results)
 }
