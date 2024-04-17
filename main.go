@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"os"
@@ -29,8 +31,8 @@ type Result struct {
 	Count int
 }
 
-func parseFloat(s string) float64 {
-	f, err := strconv.ParseFloat(s, 64)
+func parseFloat(b string) float64 {
+	f, err := strconv.ParseFloat(b, 64)
 	if err != nil {
 		panic(err)
 	}
@@ -53,63 +55,69 @@ func printResults(results Results) {
 	k := keys[len(keys)-1]
 	r := results[k]
 	avg := r.Sum / float64(r.Count)
-	fmt.Printf("%s=%.1f/%.1f/%.1f}", k, r.Min, avg, r.Max)
+	fmt.Printf("%s=%.1f/%.1f/%.1f}\n", k, r.Min, avg, r.Max)
 }
 
-func producer(c chan<- []string) {
+// reads the entire file into memory
+func producer(f *os.File, c chan<- string) {
 	defer close(c)
 
-	buflenstr := os.Getenv("BUFFLEN")
-	if buflenstr == "" {
-		buflenstr = "8192"
-	}
-	buflen, err := strconv.Atoi(buflenstr)
+	bufflenStr := os.Getenv("BUFFLEN")
+	buflen, err := strconv.Atoi(bufflenStr)
 	if err != nil {
-		panic(err)
+		buflen = 4096 * 4096
 	}
 
-	filePath := "data/measurements.txt"
+	rdBuf := make([]byte, buflen)
 
-	f, err := os.Open(filePath)
-	if err != nil {
-		panic(err)
-	}
-	defer f.Close()
+	garbage := make([]byte, 0, 4096)
+	for {
+		n, err := f.Read(rdBuf)
+		if errors.Is(err, io.EOF) {
+			break
+		} else if err != nil {
+			panic(err)
+		}
 
-	scanner := bufio.NewScanner(f)
-	lines := make([]string, 0, buflen)
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
-		if len(lines) == cap(lines) {
-			c <- lines
-			lines = make([]string, 0, buflen)
+		start := 1
+		end := n
+		for rdBuf[start-1] != '\n' {
+			start++
+		}
+		for rdBuf[end-1] != '\n' {
+			end--
+		}
+
+		leading := rdBuf[0:start]
+		trailing := rdBuf[end:n]
+		body := rdBuf[start:end]
+		garbage = append(garbage, leading...)
+		garbage = append(garbage, trailing...)
+
+		if len(body) > 0 {
+			c <- string(body)
 		}
 	}
-	if len(lines) > 0 {
-		c <- lines
+	if len(garbage) > 0 {
+		c <- string(garbage)
 	}
 }
 
-func lenMonitor(c <-chan []string) {
+func lenMonitor(c <-chan string) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
-	for {
-		select {
-		case <-ticker.C:
-			fmt.Fprintf(os.Stderr, "len(c)=%d\n", len(c))
-		case _, ok := <-c:
-			if !ok {
-				return
-			}
-		}
+	for range ticker.C {
+		fmt.Fprintf(os.Stderr, "buffer length: %d\n", len(c))
 	}
 }
 
-func consumer(c <-chan []string) Results {
+func consumer(c <-chan string) Results {
 	results := make(Results)
-	for lines := range c {
-		for _, line := range lines {
+	for chunk := range c {
+		scanner := bufio.NewScanner(strings.NewReader(chunk))
+		for scanner.Scan() {
+			line := scanner.Text()
 			station, tempStr, _ := strings.Cut(line, ";")
 			temp := parseFloat(tempStr)
 
@@ -143,18 +151,16 @@ func main() {
 	defer pprof.StopCPUProfile()
 
 	defer timer("main")()
-	filePath := "data/measurements.txt"
+	filePath := os.Args[1]
 
 	f, err := os.Open(filePath)
 	if err != nil {
 		panic(err)
 	}
-	defer f.Close()
 
-	c := make(chan []string, 128)
-	go lenMonitor(c)
-	go producer(c)
+	c := make(chan string, 100)
+
+	go producer(f, c)
 	results := consumer(c)
-
 	printResults(results)
 }

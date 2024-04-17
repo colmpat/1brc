@@ -2,6 +2,49 @@
 
 ## Devlog
 
+#### v2.1
+Looking at the flamegraph for this, the majority of our time is spent processing. The consumer has three
+main culprits: map access, scanner.Text(), and parseFloat.
+
+#### v2.0
+Now that I have some quick file processing I added one layer on top of this: boundary awareness. When we
+slurp up this large buffer, we often read into the middle of the line. To solve this, I make a garage bin
+in the producer that holds these endcaps. When reading to this chunk boundary, I walk backwards from the 
+end until I hit a newline and forwards from the start until I hit a newline and add these segments to the 
+garbage bin. The piece inbetween is added to the channel and the garbage bin is added to the channel once
+at the very end.
+
+This version also brings tests in from the challenge repo which helped to validate this garbage bin logic.
+
+**Runtime**: 2m5.236455412s
+
+#### v1.2
+I want to drill into the fastest way to read the file so this will be
+based on no processing logic. If we can find the aboslute fastest way to read the file, we can
+then add processing logic on top of that. I'm going to try a few different methods to read the file
+
+| Buffer Size | Scanner Time (s) | f.Read() Time (s) |
+|-------------|----------| ----------|
+1024 | 1m0.858337389s | 19.097867371s | 
+2048 | 47.164890247s | 13.358809107s | 
+4096 | 41.066632658s | 9.070102125s | 
+8192 | 36.921121763s | 6.123235963s | 
+16384 | 34.536465545s | 5.688912133s | 
+32768 | 33.757824443s | 5.368416801s | 
+65536 | 33.094731985s | 5.035294434s | 
+131072 | 32.489679904s | 5.246261899s | 
+262144 | 31.971283174s | 5.258327858s | 
+524288 | 32.064310861s | 4.796567423s | 
+1048576 | ~ | 4.691419723s | 
+2097152 | ~ | 4.718754142s | 
+4194304 | ~ | 4.742348154s | 
+8388608 | ~ | 4.732217901s
+16777216 | ~ | 4.778489242s
+33554432 | ~ | 4.80144076s
+
+For now, I want to get something working in the faster range of outputs aboce and optimize on this buffer speed a little later.
+
+
 #### v1.1
 This time, I play with the buffer size of the channel. By sending data in chunks, we can reduce the amount of
 time we spend scheduling and locking. Running with different buffer sizes, we can see that the time it takes
