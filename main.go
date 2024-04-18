@@ -31,12 +31,32 @@ type Result struct {
 	Count int
 }
 
-func parseFloat(b string) float64 {
-	f, err := strconv.ParseFloat(b, 64)
-	if err != nil {
-		panic(err)
+func parseFloat(b []byte, neg bool) float64 {
+	//XX.X
+	i := 0
+	m := 4 // 20.3 == 4 but 8.2 == 3
+
+	val := 0.0
+	for i < m {
+		if b[i] == '.' {
+			if i == 1 {
+				m--
+			}
+			i++
+			continue
+		}
+		val *= 10
+		val += float64(b[i] - 48)
+		i++
 	}
-	return f
+
+	if neg {
+		val *= -0.1
+	} else {
+		val *= 0.1
+	}
+
+	return val
 }
 
 func printResults(results Results) {
@@ -117,9 +137,22 @@ func consumer(c <-chan string) Results {
 	for chunk := range c {
 		scanner := bufio.NewScanner(strings.NewReader(chunk))
 		for scanner.Scan() {
-			line := scanner.Text()
-			station, tempStr, _ := strings.Cut(line, ";")
-			temp := parseFloat(tempStr)
+			line := scanner.Bytes()
+			split := 0
+			for line[split] != ';' {
+				split++
+			}
+
+			station := string(line[:split])
+			split++
+			neg := false
+			if line[split] == '-' {
+				split++
+				neg = true
+			}
+			end := split + 4 // XX.X
+
+			temp := parseFloat(line[split:end], neg)
 
 			if r, ok := results[station]; !ok {
 				results[station] = Result{

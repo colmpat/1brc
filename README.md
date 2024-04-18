@@ -6,6 +6,15 @@
 Looking at the flamegraph for this, the majority of our time is spent processing. The consumer has three
 main culprits: map access, scanner.Text(), and parseFloat.
 
+Changing just the float parsing and the scanner.Text() call we reduce the runtime to:
+
+1m48.595598283s
+
+
+> Note: looking at the parsing logic of the consumer, I think a state-machine could be really fast here.
+Something like the following states: `READING_STATION`, `SEMICOLON`, `PARSING_TEMP`, `NEWLINE`. 
+Automota theory fast?
+
 #### v2.0
 Now that I have some quick file processing I added one layer on top of this: boundary awareness. When we
 slurp up this large buffer, we often read into the middle of the line. To solve this, I make a garage bin
