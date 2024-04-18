@@ -10,6 +10,7 @@ import (
 	"runtime/pprof"
 	"slices"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -106,11 +107,14 @@ func producer(f *os.File, c chan<- string) {
 			end--
 		}
 
+		body := rdBuf[start:end]
+
 		leading := rdBuf[0:start]
 		trailing := rdBuf[end:n]
-		body := rdBuf[start:end]
-		garbage = append(garbage, leading...)
-		garbage = append(garbage, trailing...)
+		garb := make([]byte, start+n-end)
+		copy(garb, append(leading, trailing...))
+
+		garbage = append(garbage, garb...)
 
 		if len(body) > 0 {
 			c <- string(body)
@@ -130,33 +134,27 @@ func lenMonitor(c <-chan string) {
 	}
 }
 
-func consumer(c <-chan string) Results {
+func consumer(c <-chan string, r chan<- Results) {
 	results := make(Results)
 
 	// possible states: false=parse-station, true=parse-float
 	state := true
-	stationBuf := make([]byte, 128)
+	strbuf := make([]rune, 64)
 	si := 0
-	temp := byte(0)
+	temp := 0
 	neg := false
 	for chunk := range c {
-		//fmt.Fprintln(os.Stderr, chunk)
-		for i := range chunk {
+		for _, char := range chunk {
 			if state { // parse-station
-				char := chunk[i]
-
-				//fmt.Fprintf(os.Stderr, "chunk: %q\n", char)
-
 				if char == ';' {
 					state = false
 					continue
 				}
-				stationBuf[si] = char
+				strbuf[si] = char
 				si++
 			} else { // parse-float
-				char := chunk[i]
 				if char == '\n' { // update-dict
-					station := string(stationBuf[:si])
+					station := string(strbuf[:si])
 					si = 0
 
 					t := float64(temp) / 10.0
@@ -177,53 +175,39 @@ func consumer(c <-chan string) Results {
 					}
 
 					state = true
+					continue
 				} else if char == '.' {
 					continue
 				}
 
 				temp *= 10
 				if neg {
-					temp -= char - 48
+					temp -= int(char - '0')
 				} else {
-					temp += char - 48
+					temp += int(char - '0')
 				}
 			}
 		}
 	}
 
-	/*
-				split := 0
-				for line[split] != ';' {
-					split++
-				}
+	r <- results
+}
 
-				split++
-				neg := false
-				if line[split] == '-' {
-					split++
-					neg = true
-				}
-				end := split + 4 // XX.X
-
-				temp := parseFloat(line[split:end], neg)
-
-				if r, ok := results[station]; !ok {
-					results[station] = Result{
-						Min:   temp,
-						Max:   temp,
-						Sum:   temp,
-						Count: 1,
-					}
-				} else {
-					r.Min = math.Min(r.Min, temp)
-					r.Max = math.Max(r.Max, temp)
-					r.Sum += temp
-					r.Count++
-				}
+func merge(r <-chan Results) Results {
+	res := make(Results)
+	for result := range r {
+		for k, v := range result {
+			if r, ok := res[k]; !ok {
+				res[k] = v
+			} else {
+				r.Min = math.Min(r.Min, v.Min)
+				r.Max = math.Max(r.Max, v.Min)
+				r.Sum += v.Sum
+				r.Count += v.Count
 			}
 		}
-	*/
-	return results
+	}
+	return res
 }
 
 func main() {
@@ -246,8 +230,31 @@ func main() {
 	}
 
 	c := make(chan string, 100)
+	r := make(chan Results, 100)
 
 	go producer(f, c)
-	results := consumer(c)
+
+	workerstr := os.Getenv("WORKERS")
+	workers, err := strconv.Atoi(workerstr)
+	if err != nil {
+		workers = 17
+	}
+
+	wg := sync.WaitGroup{}
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			consumer(c, r)
+			wg.Done()
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		close(r)
+	}()
+
+	results := merge(r)
+
 	printResults(results)
 }

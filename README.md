@@ -19,6 +19,8 @@ Notable function usage to look into:
 27.8% runtime.mapaccess2_faststr (map lookup)
 26.9% runtime.slicebytetostring
 
+This brings the runtime all the way down to: 35.202693306s
+
 #### v2.1
 Looking at the flamegraph for this, the majority of our time is spent processing. The consumer has three
 main culprits: map access, scanner.Text(), and parseFloat.
