@@ -15,10 +15,9 @@ source code I saw how the built the string and it was the same as I did except w
 package for pointer arithmitic. This was WAY faster but didn't work so I'm gonna keep this in the back of
 my head to see if we can get this working later.
 
-Notable function usage:
-33.21% main.consumer
-15.59% runtime.mapaccess2_faststr
-11.40% runtime.mallocgc
+Notable function usage to look into:
+27.8% runtime.mapaccess2_faststr (map lookup)
+26.9% runtime.slicebytetostring
 
 #### v2.1
 Looking at the flamegraph for this, the majority of our time is spent processing. The consumer has three
