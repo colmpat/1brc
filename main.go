@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -11,7 +10,6 @@ import (
 	"runtime/pprof"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -134,41 +132,97 @@ func lenMonitor(c <-chan string) {
 
 func consumer(c <-chan string) Results {
 	results := make(Results)
+
+	// possible states: false=parse-station, true=parse-float
+	state := true
+	stationBuf := make([]byte, 128)
+	si := 0
+	temp := byte(0)
+	neg := false
 	for chunk := range c {
-		scanner := bufio.NewScanner(strings.NewReader(chunk))
-		for scanner.Scan() {
-			line := scanner.Bytes()
-			split := 0
-			for line[split] != ';' {
-				split++
-			}
+		//fmt.Fprintln(os.Stderr, chunk)
+		for i := range chunk {
+			if state { // parse-station
+				char := chunk[i]
 
-			station := string(line[:split])
-			split++
-			neg := false
-			if line[split] == '-' {
-				split++
-				neg = true
-			}
-			end := split + 4 // XX.X
+				//fmt.Fprintf(os.Stderr, "chunk: %q\n", char)
 
-			temp := parseFloat(line[split:end], neg)
-
-			if r, ok := results[station]; !ok {
-				results[station] = Result{
-					Min:   temp,
-					Max:   temp,
-					Sum:   temp,
-					Count: 1,
+				if char == ';' {
+					state = false
+					continue
 				}
-			} else {
-				r.Min = math.Min(r.Min, temp)
-				r.Max = math.Max(r.Max, temp)
-				r.Sum += temp
-				r.Count++
+				stationBuf[si] = char
+				si++
+			} else { // parse-float
+				char := chunk[i]
+				if char == '\n' { // update-dict
+					station := string(stationBuf[:si])
+					si = 0
+
+					t := float64(temp) / 10.0
+					temp = 0
+					neg = false
+					if r, ok := results[station]; !ok {
+						results[station] = Result{
+							Min:   t,
+							Max:   t,
+							Sum:   t,
+							Count: 1,
+						}
+					} else {
+						r.Min = math.Min(r.Min, t)
+						r.Max = math.Max(r.Max, t)
+						r.Sum += t
+						r.Count++
+					}
+
+					state = true
+				} else if char == '.' {
+					continue
+				}
+
+				temp *= 10
+				if neg {
+					temp -= char - 48
+				} else {
+					temp += char - 48
+				}
 			}
 		}
 	}
+
+	/*
+				split := 0
+				for line[split] != ';' {
+					split++
+				}
+
+				split++
+				neg := false
+				if line[split] == '-' {
+					split++
+					neg = true
+				}
+				end := split + 4 // XX.X
+
+				temp := parseFloat(line[split:end], neg)
+
+				if r, ok := results[station]; !ok {
+					results[station] = Result{
+						Min:   temp,
+						Max:   temp,
+						Sum:   temp,
+						Count: 1,
+					}
+				} else {
+					r.Min = math.Min(r.Min, temp)
+					r.Max = math.Max(r.Max, temp)
+					r.Sum += temp
+					r.Count++
+				}
+			}
+		}
+	*/
 	return results
 }
 

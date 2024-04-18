@@ -2,6 +2,24 @@
 
 ## Devlog
 
+#### v2.2
+This version takes the parsing logic and leans into a state-machine-approach. This avoids having to read
+bytes then iterate again over them -> it will be one pass over the data. This will also let us yank out
+any need for a scanner.
+
+This gets us the same runtime which is good and bad. On the one hand, no improvement. On the other hand,
+we can optimize ours which we wouldn't be able to if we were use other libs.
+
+Switching to use a string builder instead of the string buffer was noticibly slower. But looking at their
+source code I saw how the built the string and it was the same as I did except with the use of the `unsafe`
+package for pointer arithmitic. This was WAY faster but didn't work so I'm gonna keep this in the back of
+my head to see if we can get this working later.
+
+Notable function usage:
+33.21% main.consumer
+15.59% runtime.mapaccess2_faststr
+11.40% runtime.mallocgc
+
 #### v2.1
 Looking at the flamegraph for this, the majority of our time is spent processing. The consumer has three
 main culprits: map access, scanner.Text(), and parseFloat.
