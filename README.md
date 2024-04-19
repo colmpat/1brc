@@ -2,6 +2,21 @@
 
 ## Devlog
 
+#### v2.4
+I was reading an article about faster map lookups and then saw another stach overflow post that made the 
+same claim so I added this weird-unintuitive lookup pattern to the map access. This actually made the
+lookup way faster... literally have no idea why this works but it does.
+ 
+**Runtime**: 9.795203221s I think this is a 200x speedup from the original?
+
+#### v2.3
+Changing the producer to just copy the buffer and send it to the consumer simplified the code a lot.
+It allows our state machine to be as simple as we initially planned and just iterate over the buffer and
+only process on big inflection points. We got to remove the rune business and just copy a slice of the 
+buffer to a string.
+
+**Runtime**: 15.202590219s
+
 #### v2.2
 This version takes the parsing logic and leans into a state-machine-approach. This avoids having to read
 bytes then iterate again over them -> it will be one pass over the data. This will also let us yank out

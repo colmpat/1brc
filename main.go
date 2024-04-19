@@ -21,7 +21,7 @@ func timer(name string) func() {
 }
 
 // min, max, sum, count
-type Results map[string][4]int
+type Results map[string]*[4]int
 
 func printResults(results Results) {
 	keys := make([]string, 0, len(results))
@@ -47,7 +47,7 @@ func printResults(results Results) {
 }
 
 // reads the entire file into memory
-func producer(f *os.File, c chan<- string) {
+func producer(f *os.File, c chan<- []byte) {
 	defer close(c)
 
 	bufflenStr := os.Getenv("BUFFLEN")
@@ -76,21 +76,21 @@ func producer(f *os.File, c chan<- string) {
 			end--
 		}
 
-		body := rdBuf[start:end]
+		res := make([]byte, n)
+		copy(res, rdBuf)
+		body := res[start:end]
 
-		leading := rdBuf[0:start]
-		trailing := rdBuf[end:n]
-		garb := make([]byte, start+n-end)
-		copy(garb, append(leading, trailing...))
-
-		garbage = append(garbage, garb...)
+		leading := res[0:start]
+		trailing := res[end:n]
+		garbage = append(garbage, leading...)
+		garbage = append(garbage, trailing...)
 
 		if len(body) > 0 {
-			c <- string(body)
+			c <- body
 		}
 	}
 	if len(garbage) > 0 {
-		c <- string(garbage)
+		c <- garbage
 	}
 }
 
@@ -103,36 +103,35 @@ func lenMonitor(c <-chan string) {
 	}
 }
 
-func consumer(c <-chan string, r chan<- Results) {
+func consumer(c <-chan []byte, r chan<- Results) {
 	results := make(Results)
 
 	// possible states: false=parse-station, true=parse-float
 	state := true
-	strbuf := make([]rune, 128)
-	si := 0
+	si := -1
+	se := -1
 	temp := 0
 	neg := false
 	for chunk := range c {
-		for _, char := range chunk {
+		for i, char := range chunk {
 			if state { // parse-station
 				if char == ';' {
-					state = false
+					state = false // switch to parse-float
+					se = i        // save string-end
+					continue
+				} else if char == '\n' {
 					continue
 				}
-				strbuf[si] = char
-				si++
+
+				if si < 0 {
+					si = i // save string-start
+				}
 			} else { // parse-float
 				if char == '\n' { // update-dict
-					station := string(strbuf[:si])
+					state = true
+					neg = false
 
-					if r, ok := results[station]; !ok {
-						results[station] = [4]int{
-							temp,
-							temp,
-							temp,
-							1,
-						}
-					} else {
+					if r, ok := results[string(chunk[si:se])]; ok {
 						if temp < r[0] {
 							r[0] = temp
 						}
@@ -141,14 +140,27 @@ func consumer(c <-chan string, r chan<- Results) {
 						}
 						r[2] += temp
 						r[3]++
+						temp = 0
+						si = -1
+						se = -1
+						continue
 					}
 
-					state = true
-					si = 0
+					results[string(chunk[si:se])] = &[4]int{
+						temp,
+						temp,
+						temp,
+						1,
+					}
+
 					temp = 0
-					neg = false
+					si = -1
+					se = -1
 					continue
 				} else if char == '.' {
+					continue
+				} else if char == '-' {
+					neg = true
 					continue
 				}
 
@@ -167,19 +179,19 @@ func consumer(c <-chan string, r chan<- Results) {
 
 func merge(r <-chan Results) Results {
 	res := make(Results)
-	for result := range r {
-		for k, v := range result {
-			if r, ok := res[k]; !ok {
-				res[k] = v
+	for resultMap := range r {
+		for station, values := range resultMap {
+			if existingResult, ok := res[station]; !ok {
+				res[station] = values
 			} else {
-				if v[0] < r[0] {
-					r[0] = v[0]
+				if values[0] < existingResult[0] {
+					existingResult[0] = values[0]
 				}
-				if v[1] > r[1] {
-					r[1] = v[1]
+				if values[1] > existingResult[1] {
+					existingResult[1] = values[1]
 				}
-				r[2] += v[2]
-				r[3] += v[3]
+				existingResult[2] += values[2]
+				existingResult[3] += values[3]
 			}
 		}
 	}
@@ -216,7 +228,7 @@ func main() {
 		panic(err)
 	}
 
-	c := make(chan string, 100)
+	c := make(chan []byte, 100)
 	r := make(chan Results, 100)
 
 	go producer(f, c)
