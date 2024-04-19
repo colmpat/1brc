@@ -19,7 +19,11 @@ Notable function usage to look into:
 27.8% runtime.mapaccess2_faststr (map lookup)
 26.9% runtime.slicebytetostring
 
-This brings the runtime all the way down to: 35.202693306s
+Running main with buflen=16777216 and workers=17 took 24.709733555s
+
+Looking at the flame graph, we see that the `slicetorune` function takes up 50% of the time now. This is
+annoying becasue I'm only using this to fix the string output format. Maybe I'll try the string builder
+again next.
 
 #### v2.1
 Looking at the flamegraph for this, the majority of our time is spent processing. The consumer has three

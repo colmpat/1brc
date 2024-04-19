@@ -1,0 +1,88 @@
+
+main with buflen=1048576 and workers=4 took 1m7.562460975s
+
+main with buflen=1048576 and workers=6 took 51.682335944s
+
+main with buflen=1048576 and workers=8 took 39.710329458s
+
+main with buflen=1048576 and workers=10 took 35.288867755s
+
+main with buflen=1048576 and workers=12 took 35.767410848s
+
+main with buflen=1048576 and workers=14 took 37.855575573s
+
+main with buflen=1048576 and workers=16 took 35.772999079s
+
+main with buflen=2097152 and workers=4 took 1m9.498497844s
+
+main with buflen=2097152 and workers=6 took 49.789747173s
+
+main with buflen=2097152 and workers=8 took 39.546328043s
+
+main with buflen=2097152 and workers=10 took 37.097703915s
+
+main with buflen=2097152 and workers=12 took 34.510216365s
+
+main with buflen=2097152 and workers=14 took 34.448625611s
+
+main with buflen=2097152 and workers=16 took 34.789306841s
+
+main with buflen=4194304 and workers=4 took 1m6.823009501s
+
+main with buflen=4194304 and workers=6 took 45.77905445s
+
+main with buflen=4194304 and workers=8 took 37.528378508s
+
+main with buflen=4194304 and workers=10 took 35.886179765s
+
+main with buflen=4194304 and workers=12 took 35.767645014s
+
+main with buflen=4194304 and workers=14 took 34.351821817s
+
+main with buflen=4194304 and workers=16 took 33.721145613s
+
+main with buflen=8388608 and workers=4 took 1m7.454623155s
+
+main with buflen=8388608 and workers=6 took 47.304005522s
+
+main with buflen=8388608 and workers=8 took 38.025442502s
+
+main with buflen=8388608 and workers=10 took 36.534224627s
+
+main with buflen=8388608 and workers=12 took 34.029443996s
+
+main with buflen=8388608 and workers=14 took 32.760087044s
+
+main with buflen=8388608 and workers=16 took 32.416250774s
+
+main with buflen=16777216 and workers=4 took 1m10.534765984s
+
+main with buflen=16777216 and workers=6 took 47.457957362s
+
+main with buflen=16777216 and workers=8 took 40.611354353s
+
+main with buflen=16777216 and workers=10 took 35.602671346s
+
+main with buflen=16777216 and workers=12 took 34.876011211s
+
+main with buflen=16777216 and workers=14 took 35.526408648s
+
+main with buflen=16777216 and workers=16 took 33.043756576s
+
+main with buflen=33554432 and workers=4 took 1m22.794217891s
+
+main with buflen=33554432 and workers=6 took 59.085678793s
+
+main with buflen=33554432 and workers=8 took 1m7.479138158s
+
+main with buflen=33554432 and workers=10 took 59.363380081s
+
+main with buflen=16777216 and workers=16 took 27.928685852s
+
+main with buflen=16777216 and workers=18 took 30.861463421s
+
+main with buflen=16777216 and workers=20 took 31.288424324s
+
+main with buflen=16777216 and workers=22 took 30.112808883s
+
+main with buflen=16777216 and workers=24 took 30.705259187s

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math"
 	"os"
 	"runtime/pprof"
 	"slices"
@@ -21,42 +20,8 @@ func timer(name string) func() {
 	}
 }
 
-type Results map[string]Result
-
-type Result struct {
-	Min   float64
-	Max   float64
-	Sum   float64
-	Count int
-}
-
-func parseFloat(b []byte, neg bool) float64 {
-	//XX.X
-	i := 0
-	m := 4 // 20.3 == 4 but 8.2 == 3
-
-	val := 0.0
-	for i < m {
-		if b[i] == '.' {
-			if i == 1 {
-				m--
-			}
-			i++
-			continue
-		}
-		val *= 10
-		val += float64(b[i] - 48)
-		i++
-	}
-
-	if neg {
-		val *= -0.1
-	} else {
-		val *= 0.1
-	}
-
-	return val
-}
+// min, max, sum, count
+type Results map[string][4]int
 
 func printResults(results Results) {
 	keys := make([]string, 0, len(results))
@@ -68,13 +33,17 @@ func printResults(results Results) {
 	fmt.Print("{")
 	for _, k := range keys[:len(keys)-1] {
 		r := results[k]
-		avg := r.Sum / float64(r.Count)
-		fmt.Printf("%s=%.1f/%.1f/%.1f, ", k, r.Min, avg, r.Max)
+		min := float64(r[0]) / 10.0
+		max := float64(r[1]) / 10.0
+		avg := float64(r[2]) / float64(r[3]) / 10.0
+		fmt.Printf("%s=%.1f/%.1f/%.1f, ", k, min, avg, max)
 	}
 	k := keys[len(keys)-1]
 	r := results[k]
-	avg := r.Sum / float64(r.Count)
-	fmt.Printf("%s=%.1f/%.1f/%.1f}\n", k, r.Min, avg, r.Max)
+	min := float64(r[0]) / 10.0
+	max := float64(r[1]) / 10.0
+	avg := float64(r[2]) / float64(r[3]) / 10.0
+	fmt.Printf("%s=%.1f/%.1f/%.1f}\n", k, min, avg, max)
 }
 
 // reads the entire file into memory
@@ -139,7 +108,7 @@ func consumer(c <-chan string, r chan<- Results) {
 
 	// possible states: false=parse-station, true=parse-float
 	state := true
-	strbuf := make([]rune, 64)
+	strbuf := make([]rune, 128)
 	si := 0
 	temp := 0
 	neg := false
@@ -155,26 +124,29 @@ func consumer(c <-chan string, r chan<- Results) {
 			} else { // parse-float
 				if char == '\n' { // update-dict
 					station := string(strbuf[:si])
-					si = 0
 
-					t := float64(temp) / 10.0
-					temp = 0
-					neg = false
 					if r, ok := results[station]; !ok {
-						results[station] = Result{
-							Min:   t,
-							Max:   t,
-							Sum:   t,
-							Count: 1,
+						results[station] = [4]int{
+							temp,
+							temp,
+							temp,
+							1,
 						}
 					} else {
-						r.Min = math.Min(r.Min, t)
-						r.Max = math.Max(r.Max, t)
-						r.Sum += t
-						r.Count++
+						if temp < r[0] {
+							r[0] = temp
+						}
+						if temp > r[1] {
+							r[1] = temp
+						}
+						r[2] += temp
+						r[3]++
 					}
 
 					state = true
+					si = 0
+					temp = 0
+					neg = false
 					continue
 				} else if char == '.' {
 					continue
@@ -200,10 +172,14 @@ func merge(r <-chan Results) Results {
 			if r, ok := res[k]; !ok {
 				res[k] = v
 			} else {
-				r.Min = math.Min(r.Min, v.Min)
-				r.Max = math.Max(r.Max, v.Min)
-				r.Sum += v.Sum
-				r.Count += v.Count
+				if v[0] < r[0] {
+					r[0] = v[0]
+				}
+				if v[1] > r[1] {
+					r[1] = v[1]
+				}
+				r[2] += v[2]
+				r[3] += v[3]
 			}
 		}
 	}
@@ -221,7 +197,18 @@ func main() {
 	}
 	defer pprof.StopCPUProfile()
 
-	defer timer("main")()
+	bufflenStr := os.Getenv("BUFFLEN")
+	buflen, err := strconv.Atoi(bufflenStr)
+	if err != nil {
+		buflen = 4096 * 4096
+	}
+	workerstr := os.Getenv("WORKERS")
+	workers, err := strconv.Atoi(workerstr)
+	if err != nil {
+		workers = 17
+	}
+
+	defer timer(fmt.Sprintf("main with buflen=%d and workers=%d", buflen, workers))()
 	filePath := os.Args[1]
 
 	f, err := os.Open(filePath)
@@ -233,12 +220,6 @@ func main() {
 	r := make(chan Results, 100)
 
 	go producer(f, c)
-
-	workerstr := os.Getenv("WORKERS")
-	workers, err := strconv.Atoi(workerstr)
-	if err != nil {
-		workers = 17
-	}
 
 	wg := sync.WaitGroup{}
 	wg.Add(workers)
