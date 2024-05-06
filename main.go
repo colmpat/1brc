@@ -9,7 +9,6 @@ import (
 	"runtime/pprof"
 	"slices"
 	"strconv"
-	"sync"
 	"time"
 )
 
@@ -47,7 +46,7 @@ func printResults(results Results) {
 }
 
 // reads the entire file into memory
-func producer(f *os.File, c chan<- []byte) {
+func chunker(f *os.File, c chan<- []byte) {
 	defer close(c)
 
 	bufflenStr := os.Getenv("BUFFLEN")
@@ -103,7 +102,7 @@ func lenMonitor(c <-chan string) {
 	}
 }
 
-func consumer(c <-chan []byte, r chan<- Results) {
+func parser(c <-chan []byte, r chan<- Results) {
 	results := make(Results)
 
 	// possible states: false=parse-station, true=parse-float
@@ -231,19 +230,10 @@ func main() {
 	c := make(chan []byte, 100)
 	r := make(chan Results, 100)
 
-	go producer(f, c)
-
-	wg := sync.WaitGroup{}
-	wg.Add(workers)
-	for i := 0; i < workers; i++ {
-		go func() {
-			consumer(c, r)
-			wg.Done()
-		}()
-	}
+	go chunker(f, c)
 
 	go func() {
-		wg.Wait()
+		parser(c, r)
 		close(r)
 	}()
 

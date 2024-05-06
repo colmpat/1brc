@@ -1,0 +1,75 @@
+package main
+
+import (
+	"sort"
+)
+
+// convience type for storing results
+// also allows us to track the keys
+// so that we can enumerate them at the end
+type Trie struct {
+	Root *Node
+	Keys map[string]struct{}
+}
+
+type Node struct {
+	b        byte
+	Children []*Node
+	Min      int
+	Max      int
+	Sum      int
+	Count    int
+}
+
+func MakeNode(b byte) *Node {
+	return &Node{
+		b:        b,
+		Children: make([]*Node, 0),
+	}
+}
+
+// returns the address of the node for the byte
+func (n Node) findChild(b byte) (int, bool) {
+	return sort.Find(len(n.Children), func(i int) int {
+		return int(n.Children[i].b - b)
+	})
+}
+
+func (n Node) GetOrInsertChild(b byte) *Node {
+	if i, found := n.findChild(b); found {
+		return n.Children[i]
+	} else {
+		node := MakeNode(b)
+		n.Children = append(n.Children[:i], append([]*Node{node}, n.Children[i:]...)...)
+		return node
+	}
+}
+
+func (n *Node) Update(val int) {
+	if val > n.Max {
+		n.Max = val
+	}
+	if val < n.Min {
+		n.Min = val
+	}
+	n.Sum += val
+	n.Count++
+}
+
+func (n *Node) Insert(key []byte, val int) {
+	curr := n
+	for _, b := range key {
+		child := curr.GetChild(b)
+		if child == nil {
+			child = MakeNode(b)
+			curr.Children = append(n.Children, child)
+		}
+		curr = child
+	}
+	curr.Update(val)
+}
+
+func (t *Trie) Insert(key []byte, val int) {
+	t.Root.Insert(key, val)
+	t.Keys[string(key)] = struct{}{}
+}
