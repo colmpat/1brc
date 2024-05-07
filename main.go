@@ -9,8 +9,16 @@ import (
 	"runtime/pprof"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/colmpat/1brc/pkg/trie"
+)
+
+const (
+	BUFFLEN = 4096 * 4096
+	WORKERS = 17
 )
 
 func timer(name string) func() {
@@ -47,7 +55,7 @@ func printResults(results Results) {
 }
 
 // reads the entire file into memory
-func producer(f *os.File, c chan<- []byte) {
+func producer(f *os.File, c chan<- string) {
 	defer close(c)
 
 	bufflenStr := os.Getenv("BUFFLEN")
@@ -58,7 +66,8 @@ func producer(f *os.File, c chan<- []byte) {
 
 	rdBuf := make([]byte, buflen)
 
-	garbage := make([]byte, 0, 4096)
+	garbage := strings.Builder{}
+	garbage.Grow(buflen)
 	for {
 		n, err := f.Read(rdBuf)
 		if errors.Is(err, io.EOF) {
@@ -76,21 +85,18 @@ func producer(f *os.File, c chan<- []byte) {
 			end--
 		}
 
-		res := make([]byte, n)
-		copy(res, rdBuf)
-		body := res[start:end]
+		bsb := strings.Builder{}
+		bsb.Write(rdBuf[start:end])
 
-		leading := res[0:start]
-		trailing := res[end:n]
-		garbage = append(garbage, leading...)
-		garbage = append(garbage, trailing...)
+		garbage.Write(rdBuf[0:start])
+		garbage.Write(rdBuf[end:n])
 
-		if len(body) > 0 {
-			c <- body
+		if bsb.Len() > 0 {
+			c <- bsb.String()
 		}
 	}
-	if len(garbage) > 0 {
-		c <- garbage
+	if garbage.Len() > 0 {
+		c <- garbage.String()
 	}
 }
 
@@ -103,99 +109,51 @@ func lenMonitor(c <-chan string) {
 	}
 }
 
-func consumer(c <-chan []byte, r chan<- Results) {
-	results := make(Results)
+func trieParser(cin <-chan string, cout chan<- *trie.Trie) {
+	tr := trie.NewTrie()
+	var np = tr.Root
 
 	// possible states: false=parse-station, true=parse-float
 	state := true
-	si := -1
-	se := -1
 	temp := 0
 	neg := false
-	for chunk := range c {
-		for i, char := range chunk {
+	for chunk := range cin {
+		for _, r := range chunk {
 			if state { // parse-station
-				if char == ';' {
+				if r == ';' {
 					state = false // switch to parse-float
-					se = i        // save string-end
 					continue
-				} else if char == '\n' {
+				} else if r == '\n' {
 					continue
 				}
-
-				if si < 0 {
-					si = i // save string-start
-				}
+				np = np.GetOrInsertChild(r)
 			} else { // parse-float
-				if char == '\n' { // update-dict
+				if r == '\n' { // update-dict
+					np.Update(temp)
+
+					np = tr.Root
 					state = true
 					neg = false
-
-					if r, ok := results[string(chunk[si:se])]; ok {
-						if temp < r[0] {
-							r[0] = temp
-						}
-						if temp > r[1] {
-							r[1] = temp
-						}
-						r[2] += temp
-						r[3]++
-						temp = 0
-						si = -1
-						se = -1
-						continue
-					}
-
-					results[string(chunk[si:se])] = &[4]int{
-						temp,
-						temp,
-						temp,
-						1,
-					}
-
 					temp = 0
-					si = -1
-					se = -1
 					continue
-				} else if char == '.' {
+				} else if r == '.' {
 					continue
-				} else if char == '-' {
+				} else if r == '-' {
 					neg = true
 					continue
 				}
 
 				temp *= 10
 				if neg {
-					temp -= int(char - '0')
+					temp -= int(r - '0')
 				} else {
-					temp += int(char - '0')
+					temp += int(r - '0')
 				}
 			}
 		}
 	}
 
-	r <- results
-}
-
-func merge(r <-chan Results) Results {
-	res := make(Results)
-	for resultMap := range r {
-		for station, values := range resultMap {
-			if existingResult, ok := res[station]; !ok {
-				res[station] = values
-			} else {
-				if values[0] < existingResult[0] {
-					existingResult[0] = values[0]
-				}
-				if values[1] > existingResult[1] {
-					existingResult[1] = values[1]
-				}
-				existingResult[2] += values[2]
-				existingResult[3] += values[3]
-			}
-		}
-	}
-	return res
+	cout <- tr
 }
 
 func main() {
@@ -209,18 +167,7 @@ func main() {
 	}
 	defer pprof.StopCPUProfile()
 
-	bufflenStr := os.Getenv("BUFFLEN")
-	buflen, err := strconv.Atoi(bufflenStr)
-	if err != nil {
-		buflen = 4096 * 4096
-	}
-	workerstr := os.Getenv("WORKERS")
-	workers, err := strconv.Atoi(workerstr)
-	if err != nil {
-		workers = 17
-	}
-
-	defer timer(fmt.Sprintf("main with buflen=%d and workers=%d", buflen, workers))()
+	defer timer(fmt.Sprintf("main with buflen=%d and workers=%d", BUFFLEN, WORKERS))()
 	filePath := os.Args[1]
 
 	f, err := os.Open(filePath)
@@ -228,26 +175,28 @@ func main() {
 		panic(err)
 	}
 
-	c := make(chan []byte, 100)
-	r := make(chan Results, 100)
+	chunkchan := make(chan string, WORKERS)
+	triechan := make(chan *trie.Trie, WORKERS)
 
-	go producer(f, c)
+	go producer(f, chunkchan)
 
 	wg := sync.WaitGroup{}
-	wg.Add(workers)
-	for i := 0; i < workers; i++ {
+	wg.Add(WORKERS)
+	for i := 0; i < WORKERS; i++ {
 		go func() {
-			consumer(c, r)
+			trieParser(chunkchan, triechan)
 			wg.Done()
 		}()
 	}
 
 	go func() {
 		wg.Wait()
-		close(r)
+		close(triechan)
 	}()
 
-	results := merge(r)
-
-	printResults(results)
+	t := trie.NewTrie()
+	for tr := range triechan {
+		t.Merge(tr)
+	}
+	t.Write(os.Stdout)
 }

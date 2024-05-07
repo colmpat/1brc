@@ -2,6 +2,20 @@
 
 ## Devlog
 
+#### v2.5
+Because our state machine marches through the string, that got me thinking that we could use a trie.
+We already march through so update a pointer along the way will be WAY faster than parsing to a string 
+then hashing for a map lookup (i think).
+
+Let's do it!
+
+**Runtime**: 1m8.107846359s
+
+Slower than the map lookup but I think this is because I'm not using the trie correctly. I'm going to
+try to improve the `findChild` function to be more efficient. It works but I think it could be faster!
+I also came across some literature that says we can compress the trie to make it faster. I'm going to
+try that next as well.
+
 #### v2.4
 I was reading an article about faster map lookups and then saw another stach overflow post that made the 
 same claim so I added this weird-unintuitive lookup pattern to the map access. This actually made the
