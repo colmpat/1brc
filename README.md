@@ -16,6 +16,9 @@ try to improve the `findChild` function to be more efficient. It works but I thi
 I also came across some literature that says we can compress the trie to make it faster. I'm going to
 try that next as well.
 
+Just tried to make the children a rune map which actually slowed things down 2x. The map access is just
+way slower than doing binary search I guess. I'm going to try to compress the trie next.
+
 #### v2.4
 I was reading an article about faster map lookups and then saw another stach overflow post that made the 
 same claim so I added this weird-unintuitive lookup pattern to the map access. This actually made the
